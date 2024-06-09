@@ -13,11 +13,13 @@ load_dotenv()
 hatchet = Hatchet()
 
 embeddings = OpenAIEmbeddings(openai_api_key=os.environ["OPENAI_API_KEY"])
-chroma_client = chromadb.HttpClient(host="localhost", port=8000)
+chroma_client = chromadb.HttpClient(
+    host=os.environ["CHROMA_HOST"], port=os.environ["CHROMA_PORT"]
+)
 db = Chroma(
-    collection_name="langchain",
+    collection_name=os.environ["CHROMA_COLLECTION"],
     embedding_function=embeddings,
-    client=chroma_client
+    client=chroma_client,
 )
 
 
@@ -79,7 +81,7 @@ class RAGEmbeddingsWorkflow:
         processed_document = text_splitter.split_documents([doc])
         db.add_texts(
             texts=processed_document[0].page_content,
-            metadata=processed_document[0].metadata
+            metadata=processed_document[0].metadata,
         )
         context.log(f"Stored embeddings for {workflow_input['file'].get('path')}")
         return {"status": "embedded"}

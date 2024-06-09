@@ -1,19 +1,8 @@
-from typing import Annotated, Literal, Any
+from typing import Literal
 
-from pydantic import (
-    AnyUrl,
-    BeforeValidator,
-    computed_field,
-)
+from pydantic import AnyUrl
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-
-def parse_cors(v: Any) -> list[str] | str:
-    if isinstance(v, str) and not v.startswith("["):
-        return [i.strip() for i in v.split(",")]
-    elif isinstance(v, list | str):
-        return v
-    raise ValueError(v)
 
 
 class Settings(BaseSettings):
@@ -24,24 +13,27 @@ class Settings(BaseSettings):
     DOMAIN: str = "localhost"
     ENVIRONMENT: Literal["local", "staging", "production"] = "local"
 
-    @computed_field  # type: ignore[misc]
-    @property
-    def server_host(self) -> str:
-        # Use HTTPS for anything other than local development
-        if self.ENVIRONMENT == "local":
-            return f"http://{self.DOMAIN}"
-        return f"https://{self.DOMAIN}"
+    OPENAI_API_KEY: str = "your-openai-api-key"
 
-    BACKEND_CORS_ORIGINS: Annotated[
-        list[AnyUrl] | str, BeforeValidator(parse_cors)
-    ] = []
+    BACKEND_CORS_ORIGINS: list[AnyUrl] | AnyUrl = [
+        "http://localhost",
+        "http://localhost:5000",
+        "http://localhost:5173",
+        "https://localhost",
+        "https://localhost:5173",
+        "https://localhost:5000",
+        "http://localhost.tiangolo.com",
+        "http://localhost",
+        "http://localhost:5173",
+        "https://localhost",
+        "https://localhost:5173",
+        "http://localhost.tiangolo.com",
+    ]
 
     PROJECT_NAME: str
-    # POSTGRES_SERVER: str
-    # POSTGRES_PORT: int = 5432
-    # POSTGRES_USER: str
-    # POSTGRES_PASSWORD: str
-    # POSTGRES_DB: str = ""
+    CHROMA_COLLECTION: str = "langchain"
+    CHROMA_HOST: str = "localhost"
+    CHROMA_PORT: int = 8000
 
 
 settings = Settings()  # type: ignore
