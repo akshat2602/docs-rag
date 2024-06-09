@@ -1,11 +1,24 @@
 from hatchet_sdk import Hatchet
 from dotenv import load_dotenv
 from langchain_community.document_loaders import GithubFileLoader
+from langchain_text_splitters import CharacterTextSplitter
+from langchain.docstore.document import Document
+from langchain_openai import OpenAIEmbeddings
+from langchain_community.vectorstores import Chroma
 import os
+import chromadb
 
 load_dotenv()
 
 hatchet = Hatchet()
+
+embeddings = OpenAIEmbeddings(openai_api_key=os.environ["OPENAI_API_KEY"])
+chroma_client = chromadb.HttpClient(host="localhost", port=8000)
+db = Chroma(
+    collection_name="langchain",
+    embedding_function=embeddings,
+    client=chroma_client
+)
 
 
 @hatchet.workflow(on_events=["rag:crawl"])
@@ -17,9 +30,8 @@ class RAGCrawlerWorkflow:
             repo="hatchet-dev/hatchet",
             access_token=os.environ["GITHUB_PERSONAL_ACCESS_TOKEN"],
             github_api_url="https://api.github.com",
-            file_filter=lambda file_path: file_path.endswith(
-                (".md", ".mdx")
-            ) and "frontend/docs" in file_path,
+            file_filter=lambda file_path: file_path.endswith((".md", ".mdx"))
+            and "frontend/docs" in file_path,
         )
         file_paths = loader.get_file_paths()
         return {
@@ -28,33 +40,49 @@ class RAGCrawlerWorkflow:
         }
 
     @hatchet.step(parents=["crawl"])
-    def push_embed(self, context):
+    def push_for_embed(self, context):
         file_paths = context.step_output("crawl")["file_paths"]
         for file in file_paths:
             context.log(f"Pushing embeddings for {file.get('path')}")
             hatchet.client.event.push("rag:embeddings", {"file": file})
-        return {
-            "status": "pushed embeddings"
-        }
+        return {"status": "pushed embeddings"}
 
 
 @hatchet.workflow(on_events=["rag:embeddings"])
 class RAGEmbeddingsWorkflow:
     @hatchet.step()
-    def start(self, context):
-        # Collect markdown data and then clean and then embed
-        print("executed start")
-        pass
+    def fetch_document(self, context):
+        file = context.workflow_input()["file"]
+        context.log(f"Downloading {file.get('path')}")
+        loader = GithubFileLoader(
+            repo="hatchet-dev/hatchet",
+            access_token=os.environ["GITHUB_PERSONAL_ACCESS_TOKEN"],
+            github_api_url="https://api.github.com",
+            file_filter=lambda file_path: file["path"] in file_path,
+        )
+        document = loader.load()[0].page_content
+        return {
+            "status": "loaded document",
+            "document": document,
+        }
 
-    @hatchet.step(parents=["start"])
-    def embeddings(self, context):
-        print("executed embeddings")
-        pass
-
-    @hatchet.step(parents=["embeddings"])
-    def store(self, context):
-        print("executed store")
-        pass
+    @hatchet.step(parents=["fetch_document"])
+    def store_embeddings(self, context):
+        document = context.step_output("fetch_document")["document"]
+        workflow_input = context.workflow_input()
+        context.log(f"Embedding {workflow_input['file'].get('path')}")
+        doc = Document(
+            page_content=document,
+            metadata={"source": workflow_input.get("file").get("url")},
+        )
+        text_splitter = CharacterTextSplitter(chunk_size=3000, chunk_overlap=0)
+        processed_document = text_splitter.split_documents([doc])
+        db.add_texts(
+            texts=processed_document[0].page_content,
+            metadata=processed_document[0].metadata
+        )
+        context.log(f"Stored embeddings for {workflow_input['file'].get('path')}")
+        return {"status": "embedded"}
 
 
 worker = hatchet.worker("docs-rag-worker")

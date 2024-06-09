@@ -24,3 +24,5 @@ __pycache__/
 
 # Mac stuff
 .DS_Store
+
+chroma-data
