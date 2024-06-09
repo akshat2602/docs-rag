@@ -8,6 +8,9 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
 hatchet-sdk = "^0.26.2"
+langchain = "^0.2.3"
+langchain-chroma = "^0.1.1"
+langchain-community = "^0.2.4"
 
 
 [build-system]
