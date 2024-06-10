@@ -223,6 +223,7 @@ http://localhost:8080 {
 ```
 Your current directory structure will look something like this - 
 ![hatchet-directory](assets/hatchet-directory.png)
+
 To test out our hatchet config, run the command - 
 ```bash
 docker compose -f docker-compose.hatchet.yml up -d
@@ -295,6 +296,10 @@ The `rag:embeddings` workflow has two steps as well. The first step, `fetch_docu
 This approach makes our RAG system scalable and durable as we're distributing the crawling, embedding, and indexing workload across different workers and organizing the tasks into steps, making the entire process replayable.
 
 To start, create a `main.py` file in the `workers` directory where we'll initialize connections to OpenAI API and our chromaDB instance that we had started as part of our Hatchet Docker Compose file. 
+
+Just as a sanity check, our directory structure must look something like this - 
+![worker-directory-structure](assets/worker-directory-structure.png)
+
 ```python
 from hatchet_sdk import Hatchet
 from dotenv import load_dotenv
@@ -409,7 +414,8 @@ We can run our worker in a new terminal inside the `workers` directory with the 
 ```bash
 poetry run python -m main.py
 ```
-If we've set our environment variables correctly, our worker should startup. We can check this by navigating to our Hatchet admin dashboard and to the workers page where we'll see a new worker pop up. You can also access the same page by accessing this route using your browser: http://localhost:8080/workers
+If we've set our environment variables correctly, our worker should startup. We can check this by navigating to our Hatchet admin dashboard and to the workers page where we'll see a new worker pop up. You can also access the same page by accessing this route using your browser: http://localhost:8080/workers.
+
 The page will look something like this - 
 ![hatchet-worker](assets/hatchet-worker.png)
 You can also navigate to the workflows page where you'll see the two workflows we've defined show up -
@@ -428,3 +434,301 @@ We've successfully crawled, embedded and indexed our documentation, now we can m
 
 ### Setting up the API:
 
+To set up the API, we'll be using FastAPI and running the API server using Poetry. Let's begin by creating a new directory called backend in the root directory of our project:
+```bash
+mkdir backend
+```
+Now, let's initialize a Poetry project inside the backend folder:
+```bash
+cd backend
+poetry init
+```
+Similar to the workers directory, we won't set up dependencies right now. We'll do that using the following command: 
+```bash
+poetry add fastapi \
+uvicorn \
+openai \
+tiktoken \
+langchain \
+langchain-chroma \
+pydantic-settings \
+langchain-openai \
+langchain-community \
+chromadb
+```
+If the command runs successfully, you'll see a new `poetry.lock` file inside the `backend` directory and new dependencies in your `pyproject.toml` file.
+
+We'll create a `.env` file to store our tokens inside the backend directory:
+
+```dotenv
+DOMAIN=localhost
+
+ENVIRONMENT=local
+
+PROJECT_NAME=docs-rag
+
+OPENAI_API_KEY=
+
+CHROMA_COLLECTION=langchain
+CHROMA_HOST=chromadb
+CHROMA_PORT=8000
+```
+You can set the same OpenAI API token in the `backend` directory as the one in the `workers` one.
+
+Once that is done, we can start defining our API by loading in the `.env` file and starting up a listener.
+To get started, create an `app` directory inside the `backend` directory. Inside this `app` directory, create a `core` directory that'll house our database connection, our backend config and OpenAI connection.
+
+Inside the `core` directory, create three new files called `config.py`, `db.py` and `openai.py`. Make sure to also add in a `__init__.py` in the `app` and `core` directory to help python recognize the as modules. 
+
+Our directory structure will look something like this - 
+![backend-directory-structure](assets/backend-directory-structure.png)
+
+`config.py` will have the following contents - 
+```python
+from typing import Literal
+from pydantic import AnyUrl
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env", env_ignore_empty=True, extra="ignore"
+    )
+    API_V1_STR: str = "/api/v1"
+    DOMAIN: str = "localhost"
+    ENVIRONMENT: Literal["local", "staging", "production"] = "local"
+
+    OPENAI_API_KEY: str = "your-openai-api-key"
+
+    BACKEND_CORS_ORIGINS: list[AnyUrl] | AnyUrl = [
+        "http://localhost",
+        "http://localhost:5000",
+        "http://localhost:5173",
+        "https://localhost",
+        "https://localhost:5173",
+        "https://localhost:5000",
+        "http://localhost.tiangolo.com",
+        "http://localhost",
+        "http://localhost:5173",
+        "https://localhost",
+        "https://localhost:5173",
+        "http://localhost.tiangolo.com",
+    ]
+
+    PROJECT_NAME: str
+    CHROMA_COLLECTION: str = "langchain"
+    CHROMA_HOST: str = "localhost"
+    CHROMA_PORT: int = 8000
+
+
+settings = Settings()  # type: ignore
+
+```
+This code defines a Pydantic Settings model for managing application settings of our FastAPI. It load settings from an environment file (".env") while ignoring empty values.
+
+The `db.py` file will house our DB connection to chroma and store a DB object that can be used to perform DB operations. The file will have the following DB connection code - 
+```python
+from typing import List
+from langchain_openai import OpenAIEmbeddings
+from langchain.docstore.document import Document
+from langchain_community.vectorstores import Chroma
+import chromadb
+
+from app.core.config import settings
+
+db = None
+
+
+def init_db():
+    embeddings = OpenAIEmbeddings(openai_api_key=settings.OPENAI_API_KEY)
+    chroma_client = chromadb.HttpClient(
+        host=settings.CHROMA_HOST, port=settings.CHROMA_PORT
+    )
+    global db
+    db = Chroma(
+        collection_name=settings.CHROMA_COLLECTION,
+        embedding_function=embeddings,
+        client=chroma_client,
+    )
+    print("DB initialized")
+
+
+def get_db():
+    global db
+    return db
+
+
+def get_relevant_documents(question: str) -> List[Document]:
+    db = get_db()
+    retriever = db.as_retriever(
+        search_type="mmr", search_kwargs={"k": 5, "fetch_k": 50}
+    )
+    relevant_docs = retriever.invoke(question)
+    return relevant_docs
+
+```
+- The `init_db()` function initializes the database by creating an instance of Chroma with settings from the application configuration (settings). It sets up embeddings using OpenAIEmbeddings and a ChromaDB client.
+- The `get_db()` function returns the initialized database instance.
+- The `get_relevant_documents()` function takes a question as input, retrieves relevant documents from the database using a retriever configured for Maximal Marginal Relevance (MMR) search, and returns a list of relevant documents.
+
+The `openai.py` file will house the code for establishing a connection to ChatGPT and have the prompt for getting answers - 
+```python
+from typing import List
+from langchain.docstore.document import Document
+from langchain_core.prompts import PromptTemplate
+from langchain_openai import OpenAI
+
+from app.core.config import settings
+from app.core.db import get_relevant_documents
+
+llm = None
+
+
+def init_openai():
+    global llm
+    llm = OpenAI(api_key=settings.OPENAI_API_KEY)
+
+
+def get_llm():
+    global llm
+    return llm
+
+
+def answer_question(question: str) -> tuple[str, List[Document]]:
+    """
+    Answer a question using RAG.
+    First step: Fetch relevant documents from the db
+    Second step: Pass the documents and the question to ChatGPT
+    Third step: Return the answer
+    """
+    relevant_docs = get_relevant_documents(question)
+    prepped_prompt = get_magic_prompt()
+    prompt = PromptTemplate.from_template(template=prepped_prompt)
+    runnable_prompt = prompt.invoke(
+        {"relevant_docs": relevant_docs, "question": question}
+    )
+    llm = get_llm()
+    answer = llm.invoke(runnable_prompt)
+    return (answer, relevant_docs)
+
+
+def get_magic_prompt() -> str:
+    return """
+        Here is a list of documents:
+        {relevant_docs}
+        List of documents ends here.
+        Here's a question about the documents:
+        {question}
+        Generate an answer for the question using only the relevant documents,
+        do not make things up.
+        If you can't find an answer, say so.
+        Also, try to give code examples if possible.
+        Answer the question in markdown format.:
+        """
+
+```
+- The `init_openai()` function initializes the OpenAI model using the API key from the application settings.
+- The `get_llm()` function returns the initialized OpenAI model instance.
+- The `answer_question()` function fetches relevant documents from the database, prepares a prompt with the question and relevant documents, invokes the OpenAI model with the prompt, and returns the generated answer along with the relevant documents.
+- The `get_magic_prompt()` function returns a formatted prompt template that includes placeholders for relevant documents and the question. This prompt template is used to structure the input to the OpenAI model.
+
+Now that we've defined the core components of our backend API, we can now define our routes for our server. Create a `api` directory inside `app` directory. In this `api` directory, create a file called `main.py` which will house our route to answer a question 
+
+```python
+from fastapi import APIRouter
+from typing import Any, List
+from pydantic import BaseModel
+
+from app.core.openai import answer_question
+
+api_router = APIRouter()
+
+
+class QuestionRequest(BaseModel):
+    question: str
+
+
+class QuestionResponse(BaseModel):
+    answer: str
+    sources: List[str] | None = None
+
+
+@api_router.post("/answer", response_model=QuestionResponse)
+def answer_question_api(request: QuestionRequest) -> Any:
+    """
+    Answer a question using RAG.
+    """
+    answer, relevant_docs = answer_question(request.question)
+    sources = []
+    for relevant_doc in relevant_docs:
+        sources.append(relevant_doc.metadata["path"])
+    return {"answer": answer, "sources": sources}
+
+```
+The answer route takes in a `QuestionRequest` model and calls the `answer_question` function we've defined in the `openai.py` file which'll give us an answer and a list of sources which we can return by serializing it using the `QuestionResponse` model.
+
+We can now define our FastAPI listener in a `main.py` file in our `app` directory.
+```python
+from fastapi import FastAPI
+from starlette.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+
+from app.api.main import api_router
+from app.core.config import settings
+from app.core.db import init_db
+from app.core.openai import init_openai
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup code here
+    init_db()
+    init_openai()
+    yield
+    # Cleanup code here
+
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(api_router, prefix=settings.API_V1_STR)
+```
+Here we set up a FastAPI application with middleware for CORS (Cross-Origin Resource Sharing) handling and includes the API routes defined in app.api.main.api_router.
+
+- An asynchronous context manager lifespan() is defined to handle startup and cleanup tasks for the application. Inside the lifespan() context manager, init_db() and init_openai() functions are called to initialize the database connection and the OpenAI model.
+- The FastAPI application is instantiated with the project name from the settings and an OpenAPI endpoint is configured.
+- CORS middleware is added to allow cross-origin requests from any origin with any method and headers.
+- The API routes defined in api_router are included in the application with the specified prefix.
+
+The directory structure will now look something like this - 
+![final-directory-structure](assets/final-directory-structure.png)
+
+We can start our API server by running this command inside the `backend` directory - 
+```bash
+poetry run fastapi dev app/main.py --host 0.0.0.0 --port 5000
+```
+If everything is setup correctly, FastAPI will startup an API server. To check, you can navigate to http://localhost:5000/docs.
+It'll look something like this - 
+![API-Docs](assets/API-Docs.png)
+
+You can test out the API by clicking on `Try it out` and asking a question. To trigger an API call just click on `Exectue` and an API call will be sent. An example API call - 
+![API-response](assets/API-response.png)
+
+## Conclusion
+In conclusion, we've built a scalable and durable RAG application using LangChain, FastAPI, Hatchet and ChromaDB. You can check out the code on the [GitHub repository](https://github.com/akshat2602/docs-rag)
+
+You can checkout documentation for all of the above tools here - 
+1) Hatchet: https://docs.hatchet.run
+2) FastAPI: https://fastapi.tiangolo.com/learn/
+3) LangChain: https://python.langchain.com/v0.2/docs/introduction/

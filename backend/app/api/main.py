@@ -1,10 +1,19 @@
 from fastapi import APIRouter
-from typing import Any
+from typing import Any, List
+from pydantic import BaseModel
 
-from app.models import QuestionRequest, QuestionResponse
 from app.core.openai import answer_question
 
 api_router = APIRouter()
+
+
+class QuestionRequest(BaseModel):
+    question: str
+
+
+class QuestionResponse(BaseModel):
+    answer: str
+    sources: List[str] | None = None
 
 
 @api_router.post("/answer", response_model=QuestionResponse)
