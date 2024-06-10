@@ -52,7 +52,7 @@ class RAGCrawlerWorkflow:
 
 @hatchet.workflow(on_events=["rag:embeddings"])
 class RAGEmbeddingsWorkflow:
-    @hatchet.step()
+    @hatchet.step(timeout="5m")
     def fetch_document(self, context):
         file = context.workflow_input()["file"]
         context.log(f"Downloading {file.get('path')}")
@@ -68,20 +68,22 @@ class RAGEmbeddingsWorkflow:
             "document": document,
         }
 
-    @hatchet.step(parents=["fetch_document"])
+    @hatchet.step(parents=["fetch_document"], timeout="10m")
     def store_embeddings(self, context):
         document = context.step_output("fetch_document")["document"]
         workflow_input = context.workflow_input()
         context.log(f"Embedding {workflow_input['file'].get('path')}")
         doc = Document(
             page_content=document,
-            metadata={"source": workflow_input.get("file").get("url")},
+            metadata=workflow_input['file'],
         )
         text_splitter = CharacterTextSplitter(chunk_size=3000, chunk_overlap=0)
         processed_document = text_splitter.split_documents([doc])
+        for doc in processed_document:
+            context.log(f"Adding text to db: {doc.metadata}")
         db.add_texts(
-            texts=processed_document[0].page_content,
-            metadata=processed_document[0].metadata,
+            texts=[doc.page_content for doc in processed_document],
+            metadatas=[doc.metadata for doc in processed_document],
         )
         context.log(f"Stored embeddings for {workflow_input['file'].get('path')}")
         return {"status": "embedded"}

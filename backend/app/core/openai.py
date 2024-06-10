@@ -44,10 +44,9 @@ def get_magic_prompt() -> str:
         List of documents ends here.
         Here's a question about the documents:
         {question}
-        Generate an answer for the question using only the relevant documents.
-        ONLY mention the relevant things from the documents, do not make things up.
+        Generate an answer for the question using only the relevant documents,
+        do not make things up.
         If you can't find an answer, say so.
-        Being truthful is of the highest importance.
-        Do not say something that is not in the documents.
-        Answer:
+        Also, try to give code examples if possible.
+        Answer the question in markdown format.:
         """
