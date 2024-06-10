@@ -47,7 +47,7 @@ class RAGCrawlerWorkflow:
         for file in file_paths:
             context.log(f"Pushing embeddings for {file.get('path')}")
             hatchet.client.event.push("rag:embeddings", {"file": file})
-        return {"status": "pushed embeddings"}
+        return {"status": "pushed for embeddings"}
 
 
 @hatchet.workflow(on_events=["rag:embeddings"])
