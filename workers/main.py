@@ -1,7 +1,7 @@
 from hatchet_sdk import Hatchet
 from dotenv import load_dotenv
 from langchain_community.document_loaders import GithubFileLoader
-from langchain_text_splitters import CharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain.docstore.document import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
@@ -77,7 +77,7 @@ class RAGEmbeddingsWorkflow:
             page_content=document,
             metadata=workflow_input['file'],
         )
-        text_splitter = CharacterTextSplitter(chunk_size=3000, chunk_overlap=0)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=3000, chunk_overlap=0)
         processed_document = text_splitter.split_documents([doc])
         for doc in processed_document:
             context.log(f"Adding text to db: {doc.metadata}")
