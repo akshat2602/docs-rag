@@ -726,7 +726,17 @@ You can test out the API by clicking on `Try it out` and asking a question. To t
 ![API-response](assets/API-response.png)
 
 ## Conclusion
+### Summary
 In conclusion, we've built a scalable and durable RAG application using LangChain, FastAPI, Hatchet and ChromaDB. You can check out the code on the [GitHub repository](https://github.com/akshat2602/docs-rag)
+
+### Limitations and Future Work
+There are a few limitations with the approach that I've outlined, a few of them can be improved upon and is left as an exercise for the reader. 
+1) Triggering the first crawl workflow from the admin dashboard could classify as an anti-pattern. You can instead push an event for the crawl workflow through an API. Additionally, modifying the crawl workflow to take in the repository in question as a parameter instead of hardcoding it is also a modification that can be explored.
+2) The RAG assumes that documentation for a product is open source on GitHub, this can cause issues with products that are not open source. Some sort of web crawling as a fallback will be needed in such cases.
+3) Applying concurrency control on the embedding workflow is something that can be explored as fetching 1000s of pages and creating embeddings from them can cause workers to overload and saturate the CPU which might not be ideal.
+
+
+### References
 
 You can checkout documentation for all of the above tools here - 
 1) Hatchet: https://docs.hatchet.run
