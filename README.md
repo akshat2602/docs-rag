@@ -470,7 +470,7 @@ PROJECT_NAME=docs-rag
 OPENAI_API_KEY=
 
 CHROMA_COLLECTION=langchain
-CHROMA_HOST=chromadb
+CHROMA_HOST=localhost
 CHROMA_PORT=8000
 ```
 You can set the same OpenAI API token in the `backend` directory as the one in the `workers` one.
